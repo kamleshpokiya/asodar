@@ -16,6 +16,8 @@ let userImage = null;
 let userName = '';
 let templateWidth = 0;
 let templateHeight = 0;
+let isLoadingImage = false;
+let previewImage = null; // For transparent preview while loading
 
 // Wait for DOM to be ready
 let canvas, ctx;
@@ -210,19 +212,101 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
 
   // Image input handler
   const imageInput = document.getElementById('imageInput');
+  const imageLoader = document.getElementById('imageLoader');
+  
   if (imageInput) {
     imageInput.addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (file) {
+        // Show loader
+        isLoadingImage = true;
+        if (imageLoader) {
+          imageLoader.style.display = 'flex';
+        }
+        // Add loading class to overlay
+        const imageInputOverlay = document.getElementById('imageInputOverlay');
+        if (imageInputOverlay) {
+          imageInputOverlay.classList.add('loading');
+        }
+        
         const reader = new FileReader();
         reader.onload = function(event) {
           const img = new Image();
+          
+          // Show transparent preview while loading
           img.onload = function() {
-            userImage = this;
+            // Ensure image is fully loaded
+            if (!this.complete || this.naturalWidth === 0) {
+              console.warn('Image not fully loaded');
+              return;
+            }
+            
+            previewImage = this;
+            
+            // Draw transparent preview immediately with forced repaint
             updatePreview();
+            
+            // Force browser repaint using multiple techniques
+            requestAnimationFrame(() => {
+              updatePreview();
+              // Trigger reflow to force repaint
+              if (canvas) {
+                void canvas.offsetHeight;
+              }
+            });
+            
+            // Small delay to show loading, then make it fully opaque
+            setTimeout(() => {
+              userImage = this;
+              previewImage = null;
+              isLoadingImage = false;
+              if (imageLoader) {
+                imageLoader.style.display = 'none';
+              }
+              // Remove loading class
+              const imageInputOverlay = document.getElementById('imageInputOverlay');
+              if (imageInputOverlay) {
+                imageInputOverlay.classList.remove('loading');
+              }
+              // Force update with requestAnimationFrame for reliable rendering
+              requestAnimationFrame(() => {
+                updatePreview();
+                // Force repaint
+                if (canvas) {
+                  void canvas.offsetHeight;
+                }
+              });
+            }, 300);
           };
+          
+          img.onerror = function() {
+            isLoadingImage = false;
+            previewImage = null;
+            if (imageLoader) {
+              imageLoader.style.display = 'none';
+            }
+            const imageInputOverlay = document.getElementById('imageInputOverlay');
+            if (imageInputOverlay) {
+              imageInputOverlay.classList.remove('loading');
+            }
+            alert('Failed to load image. Please try another image.');
+          };
+          
           img.src = event.target.result;
         };
+        
+        reader.onerror = function() {
+          isLoadingImage = false;
+          if (imageLoader) {
+            imageLoader.style.display = 'none';
+          }
+          const imageInputOverlay = document.getElementById('imageInputOverlay');
+          if (imageInputOverlay) {
+            imageInputOverlay.classList.remove('loading');
+          }
+          alert('Failed to read image file.');
+        };
+        
         reader.readAsDataURL(file);
       }
     });
@@ -230,13 +314,24 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
 
   // Update preview function
   function updatePreview() {
-  if (!templateImage || templateWidth === 0 || templateHeight === 0) return;
+  if (!templateImage || templateWidth === 0 || templateHeight === 0 || !canvas || !ctx) return;
   
-  // Clear canvas
+  // Ensure canvas context is valid
+  if (!ctx || canvas.width === 0 || canvas.height === 0) {
+    console.warn('Canvas not ready for drawing');
+    return;
+  }
+  
+  // Clear canvas completely
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
   // Draw template image at its original size
-  ctx.drawImage(templateImage, 0, 0, templateWidth, templateHeight);
+  try {
+    ctx.drawImage(templateImage, 0, 0, templateWidth, templateHeight);
+  } catch(e) {
+    console.error('Error drawing template:', e);
+    return;
+  }
   
   // Reposition overlays after canvas update
   setTimeout(positionOverlays, 50);
@@ -246,8 +341,9 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
   const roundImageY = templateHeight * ROUND_IMAGE_Y_PERCENT;
   const roundImageRadius = templateWidth * ROUND_IMAGE_RADIUS_PERCENT;
   
-  // Draw user image in round area if available
-  if (userImage) {
+  // Draw user image in round area if available (or preview image)
+  const imageToDraw = previewImage || userImage;
+  if (imageToDraw) {
     // Create circular clipping path for rounded image
     ctx.save();
     ctx.beginPath();
@@ -256,7 +352,7 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
     
     // Calculate image dimensions to cover the entire circle (fill mode)
     const imgSize = roundImageRadius * 2;
-    const imgAspect = userImage.width / userImage.height;
+    const imgAspect = imageToDraw.width / imageToDraw.height;
     const circleAspect = 1; // Circle is 1:1
     
     let drawWidth, drawHeight, drawX, drawY;
@@ -276,9 +372,24 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
       drawY = roundImageY - drawHeight / 2;
     }
     
+    // Set opacity for preview (transparent) vs final (opaque)
+    if (previewImage) {
+      ctx.globalAlpha = 0.5; // 50% opacity for preview
+    } else {
+      ctx.globalAlpha = 1.0; // Full opacity for final image
+    }
+    
     // Draw the image to fill the circle
-    ctx.drawImage(userImage, drawX, drawY, drawWidth, drawHeight);
+    try {
+      // Ensure image is fully loaded before drawing
+      if (imageToDraw.complete && imageToDraw.naturalWidth > 0) {
+        ctx.drawImage(imageToDraw, drawX, drawY, drawWidth, drawHeight);
+      }
+    } catch(e) {
+      console.error('Error drawing user image:', e);
+    }
     ctx.restore();
+    ctx.globalAlpha = 1.0; // Reset alpha
     
     // Debug: Draw circle outline
     if (DEBUG_MODE) {
