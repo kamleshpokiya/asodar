@@ -21,6 +21,98 @@ let templateHeight = 0;
 const canvas = document.getElementById('previewCanvas');
 const ctx = canvas.getContext('2d');
 
+// Function to position overlay inputs exactly where content will be placed
+function positionOverlays() {
+  if (!canvas || canvas.offsetWidth === 0 || templateWidth === 0 || templateHeight === 0) return;
+  
+  const canvasRect = canvas.getBoundingClientRect();
+  const canvasDisplayWidth = canvasRect.width;
+  const canvasDisplayHeight = canvasRect.height;
+  
+  if (canvasDisplayWidth === 0 || canvasDisplayHeight === 0) return;
+  
+  // Get the preview wrapper to position relative to it
+  const previewWrapper = canvas.parentElement;
+  const wrapperRect = previewWrapper.getBoundingClientRect();
+  
+  // Calculate scale factor between display and actual canvas
+  const scaleX = canvasDisplayWidth / templateWidth;
+  const scaleY = canvasDisplayHeight / templateHeight;
+  
+  // Calculate actual pixel positions on the displayed canvas
+  const imageXOnCanvas = canvasDisplayWidth * ROUND_IMAGE_X_PERCENT;
+  const imageYOnCanvas = canvasDisplayHeight * ROUND_IMAGE_Y_PERCENT;
+  const imageRadius = templateWidth * ROUND_IMAGE_RADIUS_PERCENT * scaleX;
+  const imageSize = imageRadius * 2;
+  
+  // Position and size image input overlay to match circular image area
+  const imageInputOverlay = document.getElementById('imageInputOverlay');
+  if (imageInputOverlay) {
+    // Calculate position relative to canvas (which is inside preview-wrapper)
+    const canvasLeft = canvasRect.left - wrapperRect.left;
+    const canvasTop = canvasRect.top - wrapperRect.top;
+    
+    imageInputOverlay.style.left = (canvasLeft + imageXOnCanvas) + 'px';
+    imageInputOverlay.style.top = (canvasTop + imageYOnCanvas) + 'px';
+    imageInputOverlay.style.width = imageSize + 'px';
+    imageInputOverlay.style.height = imageSize + 'px';
+  }
+  
+  // Calculate name position on displayed canvas
+  const nameXOnCanvas = canvasDisplayWidth * NAME_X_PERCENT;
+  const nameYOnCanvas = canvasDisplayHeight * NAME_Y_PERCENT;
+  
+  // Position name input overlay exactly where text will appear
+  const nameInputOverlay = document.getElementById('nameInputOverlay');
+  if (nameInputOverlay) {
+    // Calculate position relative to canvas (which is inside preview-wrapper)
+    const canvasLeft = canvasRect.left - wrapperRect.left;
+    const canvasTop = canvasRect.top - wrapperRect.top;
+    
+    // Estimate text width - make it wider to accommodate longer names
+    // Scale based on canvas display width for responsive sizing
+    const baseWidth = Math.min(canvasDisplayWidth * 0.35, 250);
+    const estimatedTextWidth = Math.max(150, baseWidth);
+    
+    // Position the input exactly where text will be drawn
+    // The transform translate(-50%, -50%) centers it on the point
+    nameInputOverlay.style.left = (canvasLeft + nameXOnCanvas) + 'px';
+    nameInputOverlay.style.top = (canvasTop + nameYOnCanvas) + 'px';
+    nameInputOverlay.style.width = estimatedTextWidth + 'px';
+  }
+}
+
+// Function to calculate optimal canvas display size
+function calculateCanvasSize() {
+  if (templateWidth === 0 || templateHeight === 0) return;
+  
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Reserve space for padding and download button
+  const availableWidth = viewportWidth - 20;
+  const availableHeight = viewportHeight - 100;
+  
+  const aspectRatio = templateWidth / templateHeight;
+  
+  let displayWidth = availableWidth;
+  let displayHeight = availableWidth / aspectRatio;
+  
+  // If height exceeds available space, scale based on height
+  if (displayHeight > availableHeight) {
+    displayHeight = availableHeight;
+    displayWidth = availableHeight * aspectRatio;
+  }
+  
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+  canvas.style.maxWidth = '100%';
+  canvas.style.maxHeight = '100%';
+  
+  // Reposition overlays after resize
+  setTimeout(positionOverlays, 50);
+}
+
 // Load template image
 const templateImg = new Image();
 templateImg.crossOrigin = 'anonymous';
@@ -34,24 +126,20 @@ templateImg.onload = function() {
   canvas.width = templateWidth;
   canvas.height = templateHeight;
   
-  // Set display size to be smaller but maintain aspect ratio
-  const maxDisplayWidth = 600;
-  const maxDisplayHeight = 500;
-  const aspectRatio = templateWidth / templateHeight;
+  // Calculate and set optimal display size
+  calculateCanvasSize();
   
-  let displayWidth = maxDisplayWidth;
-  let displayHeight = maxDisplayWidth / aspectRatio;
+  // Wait for canvas to render, then position overlays
+  setTimeout(() => {
+    positionOverlays();
+    updatePreview();
+  }, 100);
   
-  // If height exceeds max, scale based on height instead
-  if (displayHeight > maxDisplayHeight) {
-    displayHeight = maxDisplayHeight;
-    displayWidth = maxDisplayHeight * aspectRatio;
-  }
-  
-  canvas.style.width = displayWidth + 'px';
-  canvas.style.height = displayHeight + 'px';
-  
-  updatePreview();
+  // Reposition on window resize
+  window.addEventListener('resize', function() {
+    calculateCanvasSize();
+    positionOverlays();
+  });
 };
 templateImg.src = 'template.png';
 
@@ -120,6 +208,9 @@ function updatePreview() {
   
   // Draw template image at its original size
   ctx.drawImage(templateImage, 0, 0, templateWidth, templateHeight);
+  
+  // Reposition overlays after canvas update
+  setTimeout(positionOverlays, 50);
   
   // Calculate positions based on template size
   const roundImageX = templateWidth * ROUND_IMAGE_X_PERCENT;
@@ -208,7 +299,7 @@ function updatePreview() {
 // Download button handler
 document.getElementById('downloadBtn').addEventListener('click', function() {
   const link = document.createElement('a');
-  link.download = 'generated-image.png';
+  link.download = userName + '-image.png';
   link.href = canvas.toDataURL('image/png');
   link.click();
 });
