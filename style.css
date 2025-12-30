@@ -175,6 +175,9 @@ h2 {
   margin: 0;
   position: relative;
   overflow: hidden;
+  /* Hide file input text completely */
+  color: transparent;
+  text-indent: -9999px;
 }
 
 .image-input:hover {
@@ -184,7 +187,12 @@ h2 {
 }
 
 .image-input::-webkit-file-upload-button {
+  display: none;
   visibility: hidden;
+}
+
+.image-input::file-selector-button {
+  display: none;
 }
 
 .image-input-overlay::after {

@@ -17,7 +17,6 @@ let userName = '';
 let templateWidth = 0;
 let templateHeight = 0;
 let isLoadingImage = false;
-let previewImage = null; // For transparent preview while loading
 
 // Wait for DOM to be ready
 let canvas, ctx;
@@ -215,6 +214,10 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
   const imageLoader = document.getElementById('imageLoader');
   
   if (imageInput) {
+    // Remove title and any text from file input
+    imageInput.removeAttribute('title');
+    imageInput.title = '';
+    
     imageInput.addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (file) {
@@ -233,7 +236,7 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
         reader.onload = function(event) {
           const img = new Image();
           
-          // Show transparent preview while loading
+          // Load image and show immediately with full opacity
           img.onload = function() {
             // Ensure image is fully loaded
             if (!this.complete || this.naturalWidth === 0) {
@@ -241,47 +244,35 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
               return;
             }
             
-            previewImage = this;
+            // Set image immediately with full opacity - no preview delay
+            userImage = this;
+            isLoadingImage = false;
             
-            // Draw transparent preview immediately with forced repaint
+            // Hide loader immediately
+            if (imageLoader) {
+              imageLoader.style.display = 'none';
+            }
+            
+            // Remove loading class
+            if (imageInputOverlay) {
+              imageInputOverlay.classList.remove('loading');
+            }
+            
+            // Update preview immediately - force multiple repaints to ensure visibility
             updatePreview();
             
-            // Force browser repaint using multiple techniques
+            // Force immediate repaint using requestAnimationFrame
             requestAnimationFrame(() => {
               updatePreview();
-              // Trigger reflow to force repaint
-              if (canvas) {
-                void canvas.offsetHeight;
-              }
-            });
-            
-            // Small delay to show loading, then make it fully opaque
-            setTimeout(() => {
-              userImage = this;
-              previewImage = null;
-              isLoadingImage = false;
-              if (imageLoader) {
-                imageLoader.style.display = 'none';
-              }
-              // Remove loading class
-              const imageInputOverlay = document.getElementById('imageInputOverlay');
-              if (imageInputOverlay) {
-                imageInputOverlay.classList.remove('loading');
-              }
-              // Force update with requestAnimationFrame for reliable rendering
+              // Force another repaint to ensure visibility
               requestAnimationFrame(() => {
                 updatePreview();
-                // Force repaint
-                if (canvas) {
-                  void canvas.offsetHeight;
-                }
               });
-            }, 300);
+            });
           };
           
           img.onerror = function() {
             isLoadingImage = false;
-            previewImage = null;
             if (imageLoader) {
               imageLoader.style.display = 'none';
             }
@@ -341,9 +332,8 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
   const roundImageY = templateHeight * ROUND_IMAGE_Y_PERCENT;
   const roundImageRadius = templateWidth * ROUND_IMAGE_RADIUS_PERCENT;
   
-  // Draw user image in round area if available (or preview image)
-  const imageToDraw = previewImage || userImage;
-  if (imageToDraw) {
+  // Draw user image in round area if available - always full opacity, no preview
+  if (userImage) {
     // Create circular clipping path for rounded image
     ctx.save();
     ctx.beginPath();
@@ -352,7 +342,7 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
     
     // Calculate image dimensions to cover the entire circle (fill mode)
     const imgSize = roundImageRadius * 2;
-    const imgAspect = imageToDraw.width / imageToDraw.height;
+    const imgAspect = userImage.width / userImage.height;
     const circleAspect = 1; // Circle is 1:1
     
     let drawWidth, drawHeight, drawX, drawY;
@@ -372,24 +362,25 @@ document.getElementById('nameYSlider').addEventListener('input', function(e) {
       drawY = roundImageY - drawHeight / 2;
     }
     
-    // Set opacity for preview (transparent) vs final (opaque)
-    if (previewImage) {
-      ctx.globalAlpha = 0.5; // 50% opacity for preview
-    } else {
-      ctx.globalAlpha = 1.0; // Full opacity for final image
-    }
+    // Always use full opacity - no transparency effects
+    ctx.globalAlpha = 1.0;
     
-    // Draw the image to fill the circle
+    // Draw the image to fill the circle - ensure it's always visible
     try {
       // Ensure image is fully loaded before drawing
-      if (imageToDraw.complete && imageToDraw.naturalWidth > 0) {
-        ctx.drawImage(imageToDraw, drawX, drawY, drawWidth, drawHeight);
+      if (userImage.complete && userImage.naturalWidth > 0) {
+        ctx.drawImage(userImage, drawX, drawY, drawWidth, drawHeight);
+      } else {
+        // If image not ready, wait and retry
+        userImage.onload = function() {
+          updatePreview();
+        };
       }
     } catch(e) {
       console.error('Error drawing user image:', e);
     }
     ctx.restore();
-    ctx.globalAlpha = 1.0; // Reset alpha
+    ctx.globalAlpha = 1.0; // Ensure alpha is reset
     
     // Debug: Draw circle outline
     if (DEBUG_MODE) {
